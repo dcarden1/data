@@ -1,7 +1,7 @@
 # Tutorial: Gráficos e Imágenes en R para el Informe Final
 ## Estudio Ecológico de Guaridas de Chinchilla de Cola Corta — Proyecto SADDN
 
-> Este tutorial explica paso a paso cómo generar **todas las figuras y gráficos** que acompañan los resultados del informe `informe_final_v2_SADDN.docx`, usando R y los datos del repositorio.
+> Este tutorial explica paso a paso cómo generar **todas las figuras y gráficos** que acompañan los resultados del informe `informe_final_v2_SADDN.docx` y la presentación `Presentación1_resultados_chinchilla_1.pdf`, usando R y los datos del repositorio. Incluye **23 figuras** más variantes y un panel resumen.
 
 ---
 
@@ -24,7 +24,12 @@ install.packages(c(
   "ggrepel",        # Etiquetas sin solapamiento
   "patchwork",      # Combinar paneles de gráficos
   "scales",         # Formateo de ejes
-  "corrplot"        # Matriz de correlaciones
+  "corrplot",       # Matriz de correlaciones
+  "gt",             # Tablas formateadas de alta calidad
+  "cluster",        # Análisis de clusters (silhouette)
+  "factoextra",     # Visualización de clusters y método del codo
+  "rosm",           # Basemaps satelitales (tiles OpenStreetMap/Stamen)
+  "ggspatial"       # Anotaciones espaciales (escala, norte)
 ))
 
 # Cargar todos
@@ -41,6 +46,11 @@ library(ggrepel)
 library(patchwork)
 library(scales)
 library(corrplot)
+library(gt)
+library(cluster)
+library(factoextra)
+library(rosm)
+library(ggspatial)
 ```
 
 ### 0.2 Tema gráfico personalizado para el informe
@@ -862,7 +872,304 @@ ggsave("fig17_exposicion_ladera.png", fig17, width = 11, height = 5, dpi = 300)
 
 ---
 
-## 18. Panel combinado — Resumen ejecutivo (4 gráficos en 1)
+## 18. Figura 18 — Tabla 3-1 formateada (distribución de guaridas por tipo)
+
+> **→ Presentación:** Diapositiva 2 — Tabla resumen con n° de guaridas, clusters e identificadores por tipo
+
+```r
+# Tabla 3-1 del informe: distribución de guaridas
+tabla_3_1 <- data.frame(
+  Tipo = c("Naturales (control)", "Artificiales norte (+)",
+           "Artificiales sur (−)", "TOTAL"),
+  N_guaridas = c("27*", "44", "35", "106"),
+  N_clusters = c("27", "16", "14", "30"),
+  Identificacion = c("ID1 – ID30", "G[n]+[1..6]",
+                      "G[n]−[1..6]", "—")
+)
+
+fig18 <- gt(tabla_3_1) %>%
+  tab_header(
+    title = md("**Tabla 3-1.** Distribución de guaridas por tipo y posición respecto a la traza del Proyecto SADDN.")
+  ) %>%
+  cols_label(
+    Tipo = "Tipo",
+    N_guaridas = "N° guaridas",
+    N_clusters = "N° clusters",
+    Identificacion = "Identificación"
+  ) %>%
+  tab_style(
+    style = list(
+      cell_fill(color = "#4DAF4A"),
+      cell_text(color = "white", weight = "bold")
+    ),
+    locations = cells_column_labels()
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(rows = Tipo == "TOTAL")
+  ) %>%
+  tab_footnote(
+    footnote = "* 3 guaridas sin monitoreo por impacto directo de la traza (ID10, ID20, ID24). 3 guaridas desmanteladas con cámara pero sin temperatura (ID9, ID13, ID19), excluidas de modelos con delta_t.",
+    locations = cells_body(columns = N_guaridas, rows = 1)
+  ) %>%
+  tab_options(
+    table.font.size = px(13),
+    heading.align = "left",
+    column_labels.border.bottom.color = "#4DAF4A",
+    column_labels.border.bottom.width = px(2),
+    table_body.hlines.color = "#E8E8E8"
+  )
+
+# Guardar como PNG
+gtsave(fig18, "fig18_tabla_3_1.png", vwidth = 800, vheight = 350)
+```
+
+---
+
+## 19. Figura 19 — Mapa con basemap satelital ("¿Dónde?")
+
+> **→ Presentación:** Diapositiva 13 — Mapa satelital/aéreo mostrando la ubicación del área de estudio y las guaridas
+
+```r
+# Convertir a sf con CRS WGS84
+puntos_sf <- st_as_sf(datos, coords = c("UTM_Este", "UTM_Norte"), crs = 4326)
+
+# Calcular bounding box con margen
+bbox <- st_bbox(puntos_sf)
+margen <- 0.005  # ~500 m
+bbox_exp <- c(
+  xmin = bbox["xmin"] - margen, ymin = bbox["ymin"] - margen,
+  xmax = bbox["xmax"] + margen, ymax = bbox["ymax"] + margen
+)
+
+fig19 <- ggplot() +
+  annotation_map_tile(type = "osm", zoom = 15, cachedir = tempdir()) +
+  geom_sf(data = puntos_sf,
+          aes(color = tipo, size = tasa_ocup),
+          alpha = 0.85) +
+  scale_color_manual(values = colores_tipo, labels = etiquetas_tipo,
+                     name = "Tipo de guarida") +
+  scale_size_continuous(range = c(2, 6), name = "Tasa ocupación",
+                        labels = percent_format()) +
+  annotation_scale(location = "bl", width_hint = 0.25,
+                   style = "ticks") +
+  annotation_north_arrow(location = "tr", which_north = "true",
+                         style = north_arrow_fancy_orienteering(),
+                         height = unit(1.2, "cm"),
+                         width = unit(1.2, "cm")) +
+  coord_sf(xlim = c(bbox_exp["xmin"], bbox_exp["xmax"]),
+           ylim = c(bbox_exp["ymin"], bbox_exp["ymax"])) +
+  labs(
+    title = "¿Dónde? — Ubicación del área de estudio",
+    subtitle = "106 guaridas sobre imagen satelital | Proyecto SADDN",
+    x = "Longitud", y = "Latitud"
+  ) +
+  theme_informe
+
+ggsave("fig19_mapa_satelital.png", fig19, width = 11, height = 9, dpi = 300)
+```
+
+---
+
+## 20. Figura 20 — Método del codo (Elbow Method / WSS)
+
+> **→ Presentación:** Diapositiva 15 — "Elbow Method: Suma de los Cuadrados dentro del Cluster (WSS)" para determinar el número óptimo de clusters espaciales
+
+```r
+# Preparar coordenadas UTM para clustering
+puntos_utm <- st_transform(puntos_sf, crs = 32719)
+coords_utm <- st_coordinates(puntos_utm)
+
+# Método del codo: calcular WSS para k = 1 a 15
+set.seed(42)
+wss <- sapply(1:15, function(k) {
+  kmeans(coords_utm, centers = k, nstart = 25)$tot.withinss
+})
+
+wss_df <- data.frame(k = 1:15, WSS = wss)
+
+fig20 <- ggplot(wss_df, aes(x = k, y = WSS)) +
+  geom_line(color = "#2166AC", linewidth = 1.2) +
+  geom_point(color = "#2166AC", size = 3) +
+  # Marcar el codo óptimo (visual: alrededor de k = 5–7)
+  geom_vline(xintercept = 6, linetype = "dashed", color = "#D73027",
+             linewidth = 0.8) +
+  annotate("text", x = 6.5, y = max(wss) * 0.7,
+           label = "k óptimo ≈ 6",
+           color = "#D73027", size = 4, fontface = "bold", hjust = 0) +
+  scale_x_continuous(breaks = 1:15) +
+  labs(
+    title = "Método del codo (Elbow Method)",
+    subtitle = "Suma de cuadrados intra-cluster (WSS) vs. número de clusters k",
+    x = "Número de clusters (k)",
+    y = "Suma total de cuadrados\nintra-cluster (WSS)"
+  ) +
+  theme_informe
+
+ggsave("fig20_elbow_wss.png", fig20, width = 9, height = 6, dpi = 300)
+```
+
+---
+
+## 21. Figura 21 — Clusters espaciales de guaridas (k-means en mapa)
+
+> **→ Presentación:** Diapositiva 14 y 16 — Asignación de clusters espaciales sobre el mapa del área de estudio
+
+```r
+# Ejecutar k-means con el k óptimo
+set.seed(42)
+k_optimo <- 6
+km_result <- kmeans(coords_utm, centers = k_optimo, nstart = 25)
+
+# Añadir asignación de cluster a los datos
+datos$cluster_km <- factor(km_result$cluster)
+
+# Centroides de cada cluster
+centroides <- as.data.frame(km_result$centers)
+names(centroides) <- c("X", "Y")
+centroides$cluster <- factor(1:k_optimo)
+centroides_sf <- st_as_sf(centroides, coords = c("X", "Y"), crs = 32719)
+centroides_wgs <- st_transform(centroides_sf, crs = 4326)
+centroides_coords <- cbind(
+  st_coordinates(centroides_wgs),
+  cluster = centroides$cluster
+) %>% as.data.frame()
+centroides_coords$X <- as.numeric(centroides_coords$X)
+centroides_coords$Y <- as.numeric(centroides_coords$Y)
+centroides_coords$cluster <- factor(centroides_coords$cluster)
+
+# Paleta de colores para clusters
+colores_cluster <- c("#E41A1C", "#377EB8", "#4DAF4A",
+                     "#984EA3", "#FF7F00", "#A65628")
+
+fig21 <- ggplot(datos, aes(x = UTM_Este, y = UTM_Norte)) +
+  # Puntos coloreados por cluster
+  geom_point(aes(color = cluster_km, shape = tipo),
+             size = 3.5, alpha = 0.8) +
+  # Centroides
+  geom_point(data = centroides_coords, aes(x = X, y = Y),
+             shape = 4, size = 6, stroke = 2, color = "black") +
+  # Etiquetas de cluster
+  geom_label_repel(data = centroides_coords,
+                   aes(x = X, y = Y, label = paste("Cluster", cluster)),
+                   size = 3, fontface = "bold",
+                   fill = "white", alpha = 0.8,
+                   max.overlaps = 20) +
+  scale_color_manual(values = colores_cluster, name = "Cluster") +
+  scale_shape_manual(values = c("arte_norte" = 16, "arte_sur" = 17,
+                                "natural" = 15),
+                     labels = etiquetas_tipo, name = "Tipo") +
+  labs(
+    title = "Análisis espacial — Clusters de guaridas (k-means)",
+    subtitle = paste0("k = ", k_optimo,
+                      " clusters | × = centroide | Forma = tipo de guarida"),
+    x = "Longitud (°W)", y = "Latitud (°S)"
+  ) +
+  coord_fixed(ratio = 1) +
+  theme_informe
+
+ggsave("fig21_clusters_mapa.png", fig21, width = 11, height = 8, dpi = 300)
+```
+
+---
+
+## 22. Figura 22 — Silhouette plot (calidad de los clusters)
+
+> **→ Presentación:** Diapositiva 16 — Evaluación visual de la calidad de la asignación de clusters
+
+```r
+# Calcular coeficiente silhouette
+sil <- silhouette(km_result$cluster, dist(coords_utm))
+
+# Convertir a dataframe para ggplot
+sil_df <- data.frame(
+  guarida = 1:nrow(sil),
+  cluster = factor(sil[, "cluster"]),
+  sil_width = sil[, "sil_width"]
+)
+
+# Ordenar por cluster y ancho de silueta
+sil_df <- sil_df %>%
+  arrange(cluster, desc(sil_width)) %>%
+  mutate(orden = row_number())
+
+# Silueta promedio
+sil_promedio <- mean(sil_df$sil_width)
+
+fig22 <- ggplot(sil_df, aes(x = orden, y = sil_width, fill = cluster)) +
+  geom_col(width = 1) +
+  geom_hline(yintercept = sil_promedio, linetype = "dashed",
+             color = "red", linewidth = 0.8) +
+  annotate("text", x = nrow(sil_df) * 0.85, y = sil_promedio + 0.05,
+           label = paste0("Promedio = ", round(sil_promedio, 3)),
+           color = "red", fontface = "bold", size = 3.5) +
+  scale_fill_manual(values = colores_cluster, name = "Cluster") +
+  scale_y_continuous(limits = c(-0.2, 1)) +
+  labs(
+    title = "Silhouette plot — Calidad de asignación a clusters",
+    subtitle = paste0("k = ", k_optimo,
+                      " | Valores altos = buena asignación | Negativos = posible error"),
+    x = "Guaridas (ordenadas por cluster)",
+    y = "Ancho de silueta (silhouette width)"
+  ) +
+  theme_informe
+
+ggsave("fig22_silhouette.png", fig22, width = 10, height = 6, dpi = 300)
+```
+
+---
+
+## 23. Figura 23 — Resumen de ocupación por cluster espacial
+
+> **→ Presentación:** Diapositiva 17 — Comparación de tasas de ocupación entre clusters espaciales, combinando tipo y ubicación
+
+```r
+# Resumen de ocupación por cluster
+resumen_cluster <- datos %>%
+  group_by(cluster_km) %>%
+  summarise(
+    n_guaridas = n(),
+    ocup_media = mean(tasa_ocup, na.rm = TRUE),
+    ocup_sd = sd(tasa_ocup, na.rm = TRUE),
+    pct_artificial = mean(tipo != "natural") * 100,
+    n_natural = sum(tipo == "natural"),
+    n_artif = sum(tipo != "natural"),
+    .groups = "drop"
+  ) %>%
+  mutate(etiqueta = paste0("Cluster ", cluster_km,
+                           "\n(n=", n_guaridas, ")"))
+
+fig23 <- ggplot(resumen_cluster,
+                aes(x = reorder(etiqueta, -ocup_media),
+                    y = ocup_media, fill = pct_artificial)) +
+  geom_col(width = 0.65, alpha = 0.85) +
+  geom_errorbar(aes(ymin = pmax(0, ocup_media - ocup_sd),
+                    ymax = pmin(1, ocup_media + ocup_sd)),
+                width = 0.2, linewidth = 0.6) +
+  geom_text(aes(label = paste0(round(ocup_media * 100, 1), "%")),
+            vjust = -0.8, fontface = "bold", size = 3.5) +
+  geom_text(aes(y = 0.02,
+                label = paste0(n_artif, " art / ", n_natural, " nat")),
+            size = 2.8, color = "white", fontface = "bold") +
+  scale_fill_gradient(low = "#4DAF4A", high = "#2166AC",
+                      name = "% Artificiales",
+                      labels = function(x) paste0(round(x), "%")) +
+  scale_y_continuous(labels = percent_format(),
+                     expand = expansion(mult = c(0, 0.15))) +
+  labs(
+    title = "Tasa de ocupación media por cluster espacial",
+    subtitle = "Barras = media ± DE | Color = proporción de guaridas artificiales | Texto = composición",
+    x = "Cluster espacial",
+    y = "Tasa de ocupación media"
+  ) +
+  theme_informe
+
+ggsave("fig23_ocupacion_por_cluster.png", fig23, width = 10, height = 6, dpi = 300)
+```
+
+---
+
+## 24. Panel combinado — Resumen ejecutivo (4 gráficos en 1)
 
 ```r
 # Combinar figuras clave usando patchwork
@@ -882,10 +1189,10 @@ ggsave("panel_resumen_ejecutivo.png", panel_final,
 
 ---
 
-## 19. Resumen: Lista completa de figuras generadas
+## 25. Resumen: Lista completa de figuras generadas
 
-| # | Archivo | Contenido | Sección del informe |
-|---|---------|-----------|---------------------|
+| # | Archivo | Contenido | Sección / Presentación |
+|---|---------|-----------|------------------------|
 | 1 | `fig1_boxplot_ocupacion.png` | Boxplot ocupación por tipo + significancia | §4.1 / Tabla 4-1 |
 | 1b | `fig1b_violin_ocupacion.png` | Violin plot (variante) | §4.1 |
 | 2 | `fig2_estacionalidad_ocupacion.png` | Variación mensual con barras de error | §4.2 / Tabla 4-3 |
@@ -905,11 +1212,19 @@ ggsave("panel_resumen_ejecutivo.png", panel_final,
 | 15 | `fig15_triangulacion_individuos.png` | Barplot estimaciones de individuos | §4.7 / Tabla 4-8 |
 | 16 | `fig16_variables_geomorfologicas.png` | Panel de variables DEM por tipo | §3.2.3 |
 | 17 | `fig17_exposicion_ladera.png` | Gráficos circulares de exposición | §3.2.3 |
+| **18** | **`fig18_tabla_3_1.png`** | **Tabla 3-1 formateada (distribución guaridas)** | **Pres. diap. 2 / §3.1** |
+| **19** | **`fig19_mapa_satelital.png`** | **Mapa con basemap satelital (¿Dónde?)** | **Pres. diap. 13** |
+| **20** | **`fig20_elbow_wss.png`** | **Método del codo (Elbow/WSS)** | **Pres. diap. 15** |
+| **21** | **`fig21_clusters_mapa.png`** | **Clusters espaciales k-means en mapa** | **Pres. diap. 14, 16** |
+| **22** | **`fig22_silhouette.png`** | **Silhouette plot — calidad de clusters** | **Pres. diap. 16** |
+| **23** | **`fig23_ocupacion_por_cluster.png`** | **Ocupación media por cluster espacial** | **Pres. diap. 17** |
 | — | `panel_resumen_ejecutivo.png` | Panel combinado 4 figuras | Resumen |
+
+> 📌 **Figuras 18–23** (en negrita) corresponden a gráficos presentes en la presentación `Presentación1_resultados_chinchilla_1.pdf` que no estaban incluidos en la versión anterior del tutorial.
 
 ---
 
-## 20. Cómo reproducir todas las figuras
+## 26. Cómo reproducir todas las figuras
 
 1. **Abrir R** (versión ≥ 4.3.2) con RStudio
 2. **Instalar paquetes** (sección 0.1)
@@ -918,10 +1233,10 @@ ggsave("panel_resumen_ejecutivo.png", panel_final,
 5. **Ejecutar cada figura** en orden — cada una genera un PNG en el directorio de trabajo
 6. **Tamaño recomendado** para el informe Word: insertar a 15 cm de ancho
 
-> ⚠️ **Nota**: Las figuras 11b (mapa DEM) y 13–14 (distancias y co-ocurrencia) requieren conexión a internet la primera vez para descargar el DEM. Las demás figuras funcionan offline con los CSV.
+> ⚠️ **Nota**: Las figuras 11b (mapa DEM), 13–14 (distancias y co-ocurrencia), 19 (mapa satelital) y 20–22 (clusters) requieren conexión a internet la primera vez para descargar el DEM o los tiles del mapa. Las demás figuras funcionan offline con los CSV. La figura 18 (tabla formateada) requiere el paquete `gt` y `chromote` para exportar como PNG.
 
 > 💡 **Tip**: Para cambiar a formato PDF en vez de PNG, simplemente cambie `ggsave("nombre.png", ...)` por `ggsave("nombre.pdf", ...)`.
 
 ---
 
-*Tutorial de gráficos generado a partir del informe_final_v2_SADDN.docx y los datos del repositorio dcarden1/data (rama Chinchillas).*
+*Tutorial de gráficos generado a partir del informe_final_v2_SADDN.docx, la presentación Presentación1_resultados_chinchilla_1.pdf y los datos del repositorio dcarden1/data (rama Chinchillas). Figuras 18–23 agregadas desde la presentación.*
